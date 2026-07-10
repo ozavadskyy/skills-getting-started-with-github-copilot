@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
   const submitButton = signupForm.querySelector("button[type='submit']");
+  let cachedActivities = {};
 
   function renderActivities(activities) {
     activitiesList.innerHTML = "";
@@ -15,22 +16,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const spotsLeft = details.max_participants - details.participants.length;
 
-      const titleButton = document.createElement("button");
-      titleButton.type = "button";
-      titleButton.className = "activity-title-button";
-      titleButton.textContent = name;
+      const title = document.createElement("h4");
+      title.className = "activity-title";
+      title.textContent = name;
 
       const description = document.createElement("p");
       description.textContent = details.description;
 
       const schedule = document.createElement("p");
+      schedule.className = "activity-meta";
       schedule.innerHTML = `<strong>Schedule:</strong> ${details.schedule}`;
 
       const availability = document.createElement("p");
+      availability.className = "activity-meta";
       availability.innerHTML = `<strong>Availability:</strong> ${spotsLeft} spots left`;
 
       const participantsBlock = document.createElement("div");
-      participantsBlock.className = "participants hidden";
+      participantsBlock.className = "participants";
 
       const participantsTitle = document.createElement("p");
       participantsTitle.className = "participants-title";
@@ -41,12 +43,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (details.participants.length === 0) {
         const item = document.createElement("li");
+        item.className = "participants-empty";
         item.textContent = "No participants yet";
         participantsList.appendChild(item);
       } else {
         details.participants.forEach((email) => {
           const item = document.createElement("li");
-          item.textContent = email;
+
+          const emailText = document.createElement("span");
+          emailText.className = "participant-email";
+          emailText.textContent = email;
+
+          const deleteButton = document.createElement("button");
+          deleteButton.type = "button";
+          deleteButton.className = "participant-delete";
+          deleteButton.dataset.activity = name;
+          deleteButton.dataset.email = email;
+          deleteButton.setAttribute("aria-label", `Remove ${email}`);
+          deleteButton.title = `Remove ${email}`;
+          deleteButton.innerHTML = "&times;";
+
+          item.appendChild(emailText);
+          item.appendChild(deleteButton);
           participantsList.appendChild(item);
         });
       }
@@ -54,11 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
       participantsBlock.appendChild(participantsTitle);
       participantsBlock.appendChild(participantsList);
 
-      titleButton.addEventListener("click", () => {
-        participantsBlock.classList.toggle("hidden");
-      });
-
-      activityCard.appendChild(titleButton);
+      activityCard.appendChild(title);
       activityCard.appendChild(description);
       activityCard.appendChild(schedule);
       activityCard.appendChild(availability);
@@ -75,8 +89,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function fetchActivities() {
     try {
-      const response = await fetch("/activities");
+      const response = await fetch(`/activities?t=${Date.now()}`, { cache: "no-store" });
       const activities = await response.json();
+      cachedActivities = activities;
       renderActivities(activities);
     } catch (error) {
       activitiesList.innerHTML = "<p>Failed to load activities. Please try again later.</p>";
@@ -103,9 +118,18 @@ document.addEventListener("DOMContentLoaded", () => {
       if (response.ok) {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
+
+        // Update local UI state first so users see the new participant immediately.
+        if (cachedActivities[activity]) {
+          if (!cachedActivities[activity].participants.includes(email)) {
+            cachedActivities[activity].participants.push(email);
+          }
+          renderActivities(cachedActivities);
+        }
+
         signupForm.reset();
 
-        // Enhancement 1: refresh activities so available spots update immediately.
+        // Then sync from API to keep UI consistent with server state.
         await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
@@ -124,6 +148,56 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Error signing up:", error);
     } finally {
       submitButton.disabled = false;
+    }
+  });
+
+  activitiesList.addEventListener("click", async (event) => {
+    const deleteButton = event.target.closest(".participant-delete");
+    if (!deleteButton) {
+      return;
+    }
+
+    const { activity, email } = deleteButton.dataset;
+    if (!activity || !email) {
+      return;
+    }
+
+    deleteButton.disabled = true;
+
+    try {
+      const response = await fetch(
+        `/activities/${encodeURIComponent(activity)}/participants?email=${encodeURIComponent(email)}`,
+        { method: "DELETE" }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.detail || "Failed to remove participant");
+      }
+
+      if (cachedActivities[activity]) {
+        cachedActivities[activity].participants = cachedActivities[activity].participants.filter(
+          (participantEmail) => participantEmail !== email
+        );
+        renderActivities(cachedActivities);
+      }
+
+      messageDiv.textContent = result.message;
+      messageDiv.className = "success";
+      messageDiv.classList.remove("hidden");
+
+      await fetchActivities();
+
+      setTimeout(() => {
+        messageDiv.classList.add("hidden");
+      }, 5000);
+    } catch (error) {
+      messageDiv.textContent = error.message || "Failed to remove participant";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+    } finally {
+      deleteButton.disabled = false;
     }
   });
 
