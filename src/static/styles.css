@@ -142,3 +142,35 @@ footer {
   padding: 20px;
   color: #666;
 }
+.activity-title-button {
+  background: none;
+  border: none;
+  color: #0066cc;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0;
+  margin: 0 0 10px 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.activity-title-button:hover {
+  text-decoration: underline;
+  color: #004a99;
+  background: none;
+}
+
+.participants {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #ddd;
+}
+
+.participants-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.participants-list {
+  margin-left: 18px;
+}
